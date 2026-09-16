@@ -7,7 +7,7 @@
 #include <windows.h>
 #endif
 
-#define MAX_WORDS 1000
+#define MAX_WORDS 1000 //quantidade maxima que vai ser puxada da wordlist
 #define WORD_SIZE 5
 
 /* =========================
@@ -25,7 +25,7 @@
    ========================= */
 
 char Vetor[WORD_SIZE];
-
+int player = 1;
 char screen[WORD_SIZE] = {
     ' ', ' ', ' ', ' ', ' '
 };
@@ -105,6 +105,10 @@ void printBox(char letter, int color)
    PAINEL
    ========================= */
 
+/* =========================
+   PAINEL
+   ========================= */
+
 void pannel()
 {
     printf("\n");
@@ -114,6 +118,10 @@ void pannel()
 
     printf("|          G T W                 |\n");
     printf("|       GUESS THE WORD           |\n");
+
+    printf("|                                |\n");
+
+    printf("|     Vez do jogador %d           |\n", player);
 
     printf("|                                |\n");
 
@@ -127,7 +135,7 @@ void pannel()
             printf(" ");
     }
 
-    printf("        |\n");
+    printf("     |\n");
 
     printf("|                                |\n");
     printf("__________________________________\n");
@@ -140,7 +148,6 @@ void pannel()
 
     printf("\n");
 }
-
 
 /* =========================
    CARREGAR WORDLIST
@@ -327,9 +334,14 @@ int main()
        Loop do jogo
     */
 
+       /*
+       Loop do jogo
+    */
+
     while (1)
     {
-        printf("Digite uma palavra de 5 letras: ");
+        printf("Jogador %d, digite uma palavra de 5 letras: ",
+               player);
 
         scanf("%5s", Choice);
 
@@ -365,27 +377,40 @@ int main()
         evaluateWord();
 
 
-        /* Atualiza tela */
+        /* Atualiza a tela */
 
-        clear_screen();
-
-        pannel();
-
-
+        
+        
         /* Verifica vitória */
-
+        
         if (checkWin())
         {
             printf("\n");
-            printf(GREEN "        PARABENS! " RESET);
-            printf("Voce acertou!\n");
-
+            printf(GREEN "        PARABENS! Voce acertou!\n" RESET);
+            
             printf("        Palavra: %s\n", Vetor);
-
+            
+            system("pause");
+            
             break;
         }
+        
+        
+        /*
+        Troca o jogador
+        depois da tentativa.
+        */
+       
+       if (player == 1)
+       {
+           player = 2;
+        }
+        else
+        {
+            player = 1;
+        }
+        clear_screen();
+        pannel();
     }
-
-
     return 0;
 }
