@@ -1,0 +1,174 @@
+/*
+ * 			ClienteMultiTCP.c
+ *
+ * Este programa cliente foi desenvolvido para conectar uma aplicacao servidora
+ *
+ * Funcao:     Enviar e receber streams compostos de caracteres
+ * Plataforma: Windows ou CodeBlocks com MinGW
+ * Compilar:   gcc -Wall ClienteMultiTCP.c -o ClienteMultiTCP.exe -lpthread -lwsock32
+ * Uso:        ClienteMultiTCP.exe Endereco_IP_ou_nome_do_servidor porta_do_servidor
+ *
+ * Autor:      Jose Martins Junior
+ *
+ */
+
+#include <sys/types.h>
+#include <winsock2.h>
+#include <unistd.h>
+
+#include <pthread.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_FLOW_SIZE 1000  //Tamanho maximo do buffer de caracteres
+
+void *clientThread(void *arg) { //Inicio da funcao que cada thread executarah
+	int recvBytes;
+	char buf[MAX_FLOW_SIZE];
+    int sockId = *(int *)arg;
+	do {
+
+/*
+ *******************************************************************************
+               Recebendo as mensagens do servidor
+ *******************************************************************************
+ */
+		memset(buf,0,sizeof(buf));
+		recvBytes = recv(sockId, buf, MAX_FLOW_SIZE, 0);
+		if (recvBytes <= 0) {
+			if (recvBytes < 0)
+				printf("A conexao foi perdida\n");
+			else
+				printf("Encerrando a conexao do cliente\n");
+		}
+/*----------------------------------------------------------------------------*/
+
+		else {
+			/*
+			 * O servidor envia o estado completo do GTW.
+			 * Limpamos a tela antes de desenhar a nova versao,
+			 * evitando que os paineis antigos fiquem acumulados.
+			 */
+			system("cls");
+
+			printf("%s\n", buf);
+			printf("Digite a mensagem (END para encerrar): ");
+			fflush(stdout);
+		}
+	} while (recvBytes > 0);
+	close(sockId);
+	pthread_exit(0);  //Encerramento da thread
+} //Final da funcao que cada thread executarah
+
+
+int main(int argc, char *argv[]) {
+	int sockId, serverPort, sentBytes, connId;
+	char buf[MAX_FLOW_SIZE];
+	struct sockaddr_in client;
+	struct hostent *hp;
+
+	WSADATA wsaData;
+    WSAStartup(0x0101, &wsaData);
+
+/*
+ *******************************************************************************
+               Testando os argumentos passados na chamada
+ *******************************************************************************
+ */
+	if (argc != 3) {
+		printf("Incorreto... Usar: %s IP_ou_nome_do_servidor porta_do_servidor\n", argv[0]);
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Setando e testando o endereco informado (primeiro argumento)
+ *******************************************************************************
+ */
+	hp = gethostbyname(argv[1]);
+	if (((char *) hp) == NULL) {
+		printf("Host Invalido: %s\n", argv[1]);
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Setando os atributos da estrutura do socket
+ *******************************************************************************
+ */
+	memcpy((char*)&client.sin_addr, (char*)hp->h_addr, hp->h_length);
+	client.sin_family = AF_INET;
+	serverPort = atoi(argv[2]);
+	if (serverPort <= 0) {
+		printf("Porta Invalida: %s\n", argv[2]);
+		return(1);
+	}
+	client.sin_port = htons(serverPort);
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Abrindo um socket do tipo stream (TCP)
+ *******************************************************************************
+ */
+	sockId = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockId < 0) {
+		printf("Stream socket nao pode ser aberto\n");
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Conectando o socket ao servidor
+ *******************************************************************************
+ */
+	connId = connect(sockId, (struct sockaddr *)&client, sizeof client);
+	if (connId == -1) {
+		printf("A conexao com o servidor %s na porta %s falhou\n", argv[1], argv[2]);
+		close(sockId);
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+	pthread_t newThread;
+	pthread_create(&newThread, 0, (void *)clientThread, &sockId);
+	while(1) {
+		printf("Digite a mensagem (END para encerrar): ");
+		if (fgets(buf, sizeof(buf), stdin) != NULL) {
+            buf[strcspn(buf, "\n")] = '\0';
+        }
+
+
+/*
+ *******************************************************************************
+               Condicao de parada (termino normal)
+ *******************************************************************************
+ */
+		if (!strcmp(buf,"END")) {
+			close(sockId);
+			printf("Encerrado\n");
+			return(0);
+		}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Enviando as mensagens para o servidor
+ *******************************************************************************
+ */
+		sentBytes = send(sockId, buf, strlen(buf), 0);
+		if (sentBytes < 0) {
+			close(sockId);
+			printf("A conexao foi perdida\n");
+			return(1);
+		}
+		memset(buf,0,sizeof(buf));
+/*----------------------------------------------------------------------------*/
+
+	}
+}
+
