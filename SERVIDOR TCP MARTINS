@@ -1,0 +1,207 @@
+/*
+ * 			ServidorMultiAtivosTCP.c
+ *
+ * Este programa foi desenvolvido para simular uma aplicacao servidora
+ * multithread que guarda as conexões de clientes ativos e realiza a comunicação
+ * (intermediação) de mensagens entre eles
+ *
+ * Funcao:     Receber e retornar streams compostos de caracteres de
+ *             multiplas conexoes de clientes
+ * Plataforma: Windows ou CodeBlocks com MinGW
+ * Compilar:   gcc -Wall ServidorMultiAtivosTCP.c -o ServidorMultiAtivosTCP.exe -lpthread -lwsock32
+ * Uso:        ServidorMultiAtivosTCP.exe [porta_do_servidor]
+ *
+ * Autor:      Jose Martins Junior
+ *
+ */
+
+#include <sys/types.h>
+#include <winsock2.h>
+#include <unistd.h>
+
+#include <pthread.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define QUEUE_LENGTH 5      //Tamanho maximo da fila de conexoes de clientes
+#define MAX_FLOW_SIZE 1000  //Tamanho maximo do buffer de caracteres
+
+#define MAX_ATIVOS 10
+#define true 1
+
+pthread_mutex_t mut1;  //Mutex global para uso das threads
+int threadId;          //Id das threads - variavel global - condicao de disputa
+int ativos, conexoes[MAX_ATIVOS];
+
+
+void *servThread(void *arg) { //Inicio da funcao que cada thread executarah
+	int Id, sentBytes, recvBytes, n = 0;
+	char buf[MAX_FLOW_SIZE];
+	int connId = *(int *)arg;
+	pthread_mutex_lock(&mut1);   //Inicio de uma regiao critica
+	ativos++;
+	while(conexoes[n] != 0) n++;
+	conexoes[n] = connId;
+	Id = ++threadId;
+	pthread_mutex_unlock(&mut1); //Final de uma regiao critica
+	printf("Thread %d - abrindo conexao\n", Id);
+	do {
+
+/*
+ *******************************************************************************
+               Recebendo as mensagens do cliente
+ *******************************************************************************
+ */
+		memset(buf,0,sizeof(buf));
+		recvBytes = recv(connId, buf, MAX_FLOW_SIZE, 0);
+		if (recvBytes <= 0) {
+			if (recvBytes < 0)
+				printf("Thread %d - A conexao foi perdida\n", Id);
+			else
+				printf("Thread %d - Encerrando a conexao do cliente\n", Id);
+		}
+/*----------------------------------------------------------------------------*/
+
+		else {
+
+/*
+ *******************************************************************************
+               Enviando as mensagens para o cliente
+ *******************************************************************************
+ */
+			pthread_mutex_lock(&mut1);   //Inicio de uma regiao critica
+			for(n = 0; n < MAX_ATIVOS; n++) {
+				if(conexoes[n] != 0) {
+                    sentBytes = send(conexoes[n], buf, strlen(buf), 0);
+                }
+			}
+			pthread_mutex_unlock(&mut1); //Final de uma regiao critica
+			if (sentBytes < 0) {
+				printf("Thread %d - A conexao foi perdida\n", Id);
+				recvBytes=0;
+			}
+			else {
+				printf(	"Thread %d - Mensagem enviada: [%s]\n", Id, buf);
+			}
+/*----------------------------------------------------------------------------*/
+
+		}
+	} while (recvBytes > 0);
+	pthread_mutex_lock(&mut1);
+	ativos--;
+	n = 0;
+	while(conexoes[n] != connId) n++;
+	conexoes[n] = 0;
+	pthread_mutex_unlock(&mut1);
+	close(connId);
+	pthread_exit(0);  //Encerramento da thread
+} //Final da funcao que cada thread executarah
+
+
+int main(int argc, char *argv[]){
+	int sockId, bindRet, getRet, connId, serverPort;
+	unsigned int servLen, cliLen;
+    struct sockaddr_in server, client;
+
+	WSADATA wsaData;
+    WSAStartup(0x0101, &wsaData);
+
+/*
+ *******************************************************************************
+               Abrindo um socket do tipo stream (TCP)
+ *******************************************************************************
+ */
+	sockId = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockId < 0) {
+		printf("Stream socket nao pode ser aberto\n");
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Setando os atributos da estrutura do socket
+ *******************************************************************************
+ */
+	server.sin_family	= AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	if (argc == 2) {
+		serverPort	= atoi(argv[1]);
+		if (serverPort <= 0) {
+			printf("Porta Invalida: %s\n", argv[1]);
+			close(sockId);
+			return(1);
+		}
+		else server.sin_port	= htons(serverPort);
+	}
+	else server.sin_port = 0;
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Fazendo o bind para o stream socket aberto
+ *******************************************************************************
+ */
+	bindRet = bind(sockId, (struct sockaddr *)&server, sizeof(server));
+	if (bindRet < 0) {
+		printf("O bind para o stream socket falhou\n");
+		close(sockId);
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Obtendo o nome do socket
+ *******************************************************************************
+ */
+	servLen = sizeof(server);
+    getRet  = getsockname(sockId, (struct sockaddr *)&server, &servLen);
+	if (getRet < 0) {
+		printf("Nao foi possivel obter o nome do socket\n");
+		close(sockId);
+		return(1);
+	}
+/*----------------------------------------------------------------------------*/
+
+	printf("Porta do servidor: %d\n", ntohs(server.sin_port));
+
+/*
+ *******************************************************************************
+               Colocando o servidor em modo listening
+ *******************************************************************************
+ */
+	listen(sockId, QUEUE_LENGTH);
+/*----------------------------------------------------------------------------*/
+	memset(conexoes,0,MAX_ATIVOS*sizeof(int));
+	do {
+
+/*
+ *******************************************************************************
+               Habilitando o servidor de receber conexoes
+ *******************************************************************************
+ */
+		cliLen = sizeof(client);
+        connId = accept(sockId, (struct sockaddr *)&client, &cliLen);
+		if (connId < 0)
+			printf("O socket nao pode aceitar conexoes\n");
+/*----------------------------------------------------------------------------*/
+
+		else {  //Criacao de um thread para atender cada cliente
+			if(ativos < MAX_ATIVOS) {
+				pthread_t newThread;
+				pthread_create(&newThread, 0, (void *)servThread, &connId);
+			}
+			else {
+				read(connId, 0, 0);
+				write(connId, "Limite maximo de clientes excedido", sizeof("Limite maximo de clientes excedido"));
+				close(connId);
+			}
+		}
+	} while (true);
+	close(sockId);
+	return(0);
+}
+
