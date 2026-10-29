@@ -1,19 +1,23 @@
 /*
  *                  Juiz_Server.c
  *
- * "O Jogo do Psiquico" - SERVIDOR (JUIZ) TCP MULTITHREAD.
+ * Este programa foi desenvolvido para simular uma aplicacao servidora
+ * multithread baseada no "Jogo do Psiquico".
  *
- * Baseado na estrutura de:
- *   - ServidorMultiAtivosTCP.c (Jose Martins Junior)
+ * Funcao:     Receber e retornar streams compostos de caracteres de
+ *             multiplas conexoes de clientes, aplicando as regras do
+ *             Jogo do Psiquico (2 jogadores, objeto secreto, palpites
+ *             simultaneos e chat).
+ * Plataforma: Windows ou CodeBlocks com MinGW
+ * Compilar:   gcc -Wall Juiz_Server.c -o Juiz_Server.exe -lpthread -lws2_32
+ * Uso:        Juiz_Server.exe [porta_do_servidor]
  *
- * Regras:
- *   - Jogo de 2 jogadores simultaneos.
- *   - Cada jogador escolhe um objeto secreto e envia ao juiz.
- *   - O juiz conhece os dois objetos.
- *   - Cada jogador envia palpites tentando adivinhar o objeto
- *     do OPONENTE. Nao ha turnos: os palpites sao simultaneos.
- *   - Quem acertar o objeto do oponente primeiro vence.
- *   - O juiz tambem repassa mensagens de chat entre os jogadores.
+ * Autor:      Jose Martins Junior (estrutura base)
+ *             Adaptado para o Jogo do Psiquico
+ *
+ * Baseado em:
+ *   - ServidorMonoTCP.c  (Jose Martins Junior)
+ *   - ServidorMultiTCP.c (Jose Martins Junior)
  *
  * PROTOCOLO (uma mensagem por linha, terminada em '\n')
  *
@@ -26,32 +30,30 @@
  *   Juiz -> Cliente:
  *     MSG|<texto>           mensagem/estado do servidor
  *     CHAT|J<n>|<texto>     chat recebido do jogador n
- *     RESULT|HIT            o ultimo palpite acertou
  *     RESULT|MISS           o ultimo palpite errou
  *     WIN|<n>               o jogador n venceu (voce ganhou)
  *     LOSE|<n>              o jogador n venceu (voce perdeu)
  *
- * Compilar (MinGW no Windows):
- *   gcc -Wall Juiz_Server.c -o Juiz_Server.exe -lpthread -lws2_32
- *
- * Executar:
- *   Juiz_Server.exe 5000
+ *   Observacao: o acerto NAO e enviado como RESULT|HIT; ele e
+ *   comunicado diretamente por WIN|<n> (vencedor) e LOSE|<n>
+ *   (perdedor).
  */
+
+#include <sys/types.h>
+#include <winsock2.h>
+#include <unistd.h>
+
+#include <pthread.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <sys/types.h>
-#include <winsock2.h>
-#include <unistd.h>
-#include <pthread.h>
 
-#define QUEUE_LENGTH   5
-#define MAX_FLOW_SIZE  1024
+#define QUEUE_LENGTH   5      // Tamanho maximo da fila de conexoes de clientes
+#define MAX_FLOW_SIZE  1000   // Tamanho maximo do buffer de caracteres
 #define MAX_PLAYERS    2
 #define MAX_OBJ_LEN    128
-
 #define true 1
 
 /*
@@ -60,7 +62,8 @@
  * =========================
  */
 
-pthread_mutex_t mut1;
+pthread_mutex_t mut1;  // Mutex global que protege o estado dos jogadores
+int threadId;          // Id das threads - variavel global - condicao de disputa
 
 /*
  * Slots dos jogadores (1 e 2 -> indices 0 e 1).
@@ -94,7 +97,6 @@ void normalizar(const char *entrada, char *saida, int tamanho)
     int inicio = 0;
     int fim;
 
-    /* Avanca sobre espacos/tabs iniciais, parando no fim da string. */
     while (entrada[inicio] != '\0' &&
            (entrada[inicio] == ' ' || entrada[inicio] == '\t'))
         inicio++;
@@ -139,11 +141,6 @@ int enviarMensagem(int sockId, const char *mensagem)
 
 /*
  * Envia uma mensagem garantindo que ela termine com '\n'.
- *
- * O protocolo e orientado a linhas: cada mensagem deve terminar
- * em '\n' para que o cliente consiga separa-las. Esta funcao
- * acrescenta o '\n' caso ele tenha sido esquecido, evitando que
- * duas mensagens se "colem" no fluxo TCP.
  */
 int enviarLinha(int sockId, const char *mensagem)
 {
@@ -152,11 +149,8 @@ int enviarLinha(int sockId, const char *mensagem)
     if (tam > 0 && mensagem[tam - 1] == '\n')
         return enviarMensagem(sockId, mensagem);
 
-    /* Monta uma copia com '\n' no final. */
     char linha[MAX_FLOW_SIZE + 2];
-
     snprintf(linha, sizeof(linha), "%s\n", mensagem);
-
     return enviarMensagem(sockId, linha);
 }
 
@@ -178,11 +172,9 @@ void broadcast(const char *mensagem)
 int contarAtivos()
 {
     int n = 0;
-
     for (int i = 0; i < MAX_PLAYERS; i++)
         if (jogadores[i].ativo)
             n++;
-
     return n;
 }
 
@@ -205,16 +197,21 @@ int todosComSegredo()
  * =========================
  */
 
-void *servThread(void *arg)
+void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 {
-    int connId = *(int *)arg;
-    free(arg);
+    int Id, recvBytes;
+    char buf[MAX_FLOW_SIZE];
 
-    int recvBytes;
+    int connId = *(int *)arg;
+
+    pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
+    Id = ++threadId;
+    pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+
+    printf("Thread %d - abrindo conexao\n", Id);
+
     int meuSlot = -1;
     int meuNumero = 0;      /* 1 ou 2 */
-
-    char buf[MAX_FLOW_SIZE];
 
     /* Reserva um slot de jogador. */
     pthread_mutex_lock(&mut1);
@@ -236,7 +233,7 @@ void *servThread(void *arg)
             "MSG|A partida ja tem 2 jogadores. Tente mais tarde.\n");
 
         close(connId);
-        pthread_exit(0);
+        pthread_exit(0);  // Encerramento da thread
     }
 
     jogadores[meuSlot].ativo = 1;
@@ -248,171 +245,181 @@ void *servThread(void *arg)
 
     pthread_mutex_unlock(&mut1);
 
-    printf("Jogador %d conectou.\n", meuNumero);
+    printf("Thread %d - Jogador %d conectou.\n", Id, meuNumero);
 
     /* Identificacao e instrucoes iniciais. */
     {
         char msg[256];
-
         snprintf(msg, sizeof(msg),
                  "MSG|Voce e o JOGADOR %d. "
                  "Defina seu objeto secreto com SECRET.\n",
                  meuNumero);
-
         enviarLinha(connId, msg);
     }
 
-    do
-    {
+    do {
+
+/*
+ *******************************************************************************
+               Recebendo as mensagens do cliente
+ *******************************************************************************
+ */
         memset(buf, 0, sizeof(buf));
 
         recvBytes = recv(connId, buf, MAX_FLOW_SIZE - 1, 0);
 
-        if (recvBytes <= 0)
-        {
+        if (recvBytes <= 0) {
             if (recvBytes < 0)
-                printf("Jogador %d - conexao perdida\n", meuNumero);
+                printf("Thread %d - A conexao foi perdida\n", Id);
             else
-                printf("Jogador %d - encerrando conexao\n", meuNumero);
+                printf("Thread %d - Encerrando a conexao do cliente\n", Id);
 
             break;
         }
+/*----------------------------------------------------------------------------*/
 
-        buf[recvBytes] = '\0';
-        buf[strcspn(buf, "\r\n")] = '\0';
+        else {
 
-        if (strcmp(buf, "END") == 0)
-            break;
+/*
+ *******************************************************************************
+               Processando as mensagens do cliente
+ *******************************************************************************
+ */
+            buf[recvBytes] = '\0';
+            buf[strcspn(buf, "\r\n")] = '\0';
 
-        /* ---- SECRET|<objeto> ---- */
-        if (strncmp(buf, "SECRET|", 7) == 0)
-        {
-            char objeto[MAX_OBJ_LEN + 1];
-            normalizar(buf + 7, objeto, sizeof(objeto));
+            if (strcmp(buf, "END") == 0)
+                break;
 
-            if (strlen(objeto) == 0)
+            /* ---- SECRET|<objeto> ---- */
+            if (strncmp(buf, "SECRET|", 7) == 0)
             {
-                enviarLinha(connId,
-                    "MSG|Objeto invalido. Tente novamente.\n");
-                continue;
-            }
+                char objeto[MAX_OBJ_LEN + 1];
+                normalizar(buf + 7, objeto, sizeof(objeto));
 
-            pthread_mutex_lock(&mut1);
+                if (strlen(objeto) == 0)
+                {
+                    enviarLinha(connId,
+                        "MSG|Objeto invalido. Tente novamente.\n");
+                    continue;
+                }
 
-            strcpy(jogadores[meuSlot].segredo, objeto);
-            jogadores[meuSlot].temSegredo = 1;
-
-            int prontos = todosComSegredo();
-
-            pthread_mutex_unlock(&mut1);
-
-            printf("Jogador %d definiu o objeto secreto.\n", meuNumero);
-
-            enviarLinha(connId,
-                "MSG|Objeto secreto registrado.\n");
-
-            if (prontos)
-                broadcast("MSG|Os dois objetos foram definidos. "
-                          "Comecem a adivinhar com GUESS!\n");
-            else
-                enviarLinha(connId,
-                    "MSG|Aguardando o outro jogador definir o objeto...\n");
-
-            continue;
-        }
-
-        /* ---- GUESS|<objeto> ---- */
-        if (strncmp(buf, "GUESS|", 6) == 0)
-        {
-            char palpite[MAX_OBJ_LEN + 1];
-            normalizar(buf + 6, palpite, sizeof(palpite));
-
-            pthread_mutex_lock(&mut1);
-
-            if (jogoFinalizado)
-            {
-                pthread_mutex_unlock(&mut1);
-                enviarLinha(connId, "MSG|A partida ja terminou.\n");
-                continue;
-            }
-
-            if (!todosComSegredo())
-            {
-                pthread_mutex_unlock(&mut1);
-                enviarLinha(connId,
-                    "MSG|Aguarde: os dois objetos ainda nao foram definidos.\n");
-                continue;
-            }
-
-            int oponente = (meuSlot == 0) ? 1 : 0;
-            int acertou = (strcmp(palpite, jogadores[oponente].segredo) == 0);
-
-            if (acertou)
-                jogoFinalizado = 1;
-
-            pthread_mutex_unlock(&mut1);
-
-            printf("Jogador %d chutou [%s] -> %s\n",
-                   meuNumero, palpite, acertou ? "ACERTOU" : "errou");
-
-            if (acertou)
-            {
-                char msgWin[64];
-                char msgLose[64];
-
-                snprintf(msgWin, sizeof(msgWin), "WIN|%d\n", meuNumero);
-                snprintf(msgLose, sizeof(msgLose), "LOSE|%d\n", meuNumero);
-
-                /* Vencedor e perdedor recebem mensagens distintas. */
                 pthread_mutex_lock(&mut1);
+
+                strcpy(jogadores[meuSlot].segredo, objeto);
+                jogadores[meuSlot].temSegredo = 1;
+
+                int prontos = todosComSegredo();
+
+                pthread_mutex_unlock(&mut1);
+
+                printf("Thread %d - Jogador %d definiu o objeto secreto.\n",
+                       Id, meuNumero);
+
+                enviarLinha(connId,
+                    "MSG|Objeto secreto registrado.\n");
+
+                if (prontos)
+                    broadcast("MSG|Os dois objetos foram definidos. "
+                              "Comecem a adivinhar com GUESS!\n");
+                else
+                    enviarLinha(connId,
+                        "MSG|Aguardando o outro jogador definir o objeto...\n");
+
+                continue;
+            }
+
+            /* ---- GUESS|<objeto> ---- */
+            if (strncmp(buf, "GUESS|", 6) == 0)
+            {
+                char palpite[MAX_OBJ_LEN + 1];
+                normalizar(buf + 6, palpite, sizeof(palpite));
+
+                pthread_mutex_lock(&mut1);
+
+                if (jogoFinalizado)
+                {
+                    pthread_mutex_unlock(&mut1);
+                    enviarLinha(connId, "MSG|A partida ja terminou.\n");
+                    continue;
+                }
+
+                if (!todosComSegredo())
+                {
+                    pthread_mutex_unlock(&mut1);
+                    enviarLinha(connId,
+                        "MSG|Aguarde: os dois objetos ainda nao foram definidos.\n");
+                    continue;
+                }
+
+                int oponente = (meuSlot == 0) ? 1 : 0;
+                int acertou = (strcmp(palpite, jogadores[oponente].segredo) == 0);
+
+                if (acertou)
+                    jogoFinalizado = 1;
+
+                pthread_mutex_unlock(&mut1);
+
+                printf("Thread %d - Jogador %d chutou [%s] -> %s\n",
+                       Id, meuNumero, palpite, acertou ? "ACERTOU" : "errou");
+
+                if (acertou)
+                {
+                    char msgWin[64];
+                    char msgLose[64];
+
+                    snprintf(msgWin, sizeof(msgWin), "WIN|%d\n", meuNumero);
+                    snprintf(msgLose, sizeof(msgLose), "LOSE|%d\n", meuNumero);
+
+                    pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
+
+                    for (int i = 0; i < MAX_PLAYERS; i++)
+                    {
+                        if (!jogadores[i].ativo)
+                            continue;
+
+                        if (i == meuSlot)
+                            enviarLinha(jogadores[i].sockId, msgWin);
+                        else
+                            enviarLinha(jogadores[i].sockId, msgLose);
+                    }
+
+                    pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+                }
+                else
+                {
+                    enviarLinha(connId, "RESULT|MISS\n");
+                }
+
+                continue;
+            }
+
+            /* ---- CHAT|<texto> ---- */
+            if (strncmp(buf, "CHAT|", 5) == 0)
+            {
+                const char *texto = buf + 5;
+
+                char msg[MAX_FLOW_SIZE];
+                snprintf(msg, sizeof(msg), "CHAT|J%d|%s\n", meuNumero, texto);
+
+                pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
 
                 for (int i = 0; i < MAX_PLAYERS; i++)
                 {
-                    if (!jogadores[i].ativo)
-                        continue;
-
-                    if (i == meuSlot)
-                        enviarLinha(jogadores[i].sockId, msgWin);
-                    else
-                        enviarLinha(jogadores[i].sockId, msgLose);
+                    if (jogadores[i].ativo && i != meuSlot)
+                        enviarLinha(jogadores[i].sockId, msg);
                 }
 
-                pthread_mutex_unlock(&mut1);
-            }
-            else
-            {
-                enviarLinha(connId, "RESULT|MISS\n");
+                pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+
+                continue;
             }
 
-            continue;
+            /* Comando desconhecido. */
+            enviarLinha(connId,
+                "MSG|Comando invalido. Use SECRET|, GUESS| ou CHAT|.\n");
+/*----------------------------------------------------------------------------*/
         }
-
-        /* ---- CHAT|<texto> ---- */
-        if (strncmp(buf, "CHAT|", 5) == 0)
-        {
-            const char *texto = buf + 5;
-
-            char msg[MAX_FLOW_SIZE];
-            snprintf(msg, sizeof(msg), "CHAT|J%d|%s\n", meuNumero, texto);
-
-            /* Repassa para o oponente (nao ecoa para quem enviou). */
-            pthread_mutex_lock(&mut1);
-
-            for (int i = 0; i < MAX_PLAYERS; i++)
-            {
-                if (jogadores[i].ativo && i != meuSlot)
-                    enviarLinha(jogadores[i].sockId, msg);
-            }
-
-            pthread_mutex_unlock(&mut1);
-
-            continue;
-        }
-
-        /* Comando desconhecido. */
-        enviarLinha(connId,
-            "MSG|Comando invalido. Use SECRET|, GUESS| ou CHAT|.\n");
-
     } while (recvBytes > 0);
 
     /* Limpeza do slot. */
@@ -435,10 +442,10 @@ void *servThread(void *arg)
 
     close(connId);
 
-    printf("Jogador %d - conexao encerrada\n", meuNumero);
+    printf("Thread %d - Jogador %d - conexao encerrada\n", Id, meuNumero);
 
-    pthread_exit(0);
-}
+    pthread_exit(0);  // Encerramento da thread
+} // Final da funcao que cada thread executarah
 
 /*
  * =========================
@@ -448,23 +455,12 @@ void *servThread(void *arg)
 
 int main(int argc, char *argv[])
 {
-    int sockId;
-    int bindRet;
-    int connId;
-    int serverPort;
-
-    unsigned int cliLen;
-
-    struct sockaddr_in server;
-    struct sockaddr_in client;
+    int sockId, bindRet, getRet, connId, serverPort;
+    unsigned int servLen, cliLen;
+    struct sockaddr_in server, client;
 
     WSADATA wsaData;
-
-    if (WSAStartup(0x0101, &wsaData) != 0)
-    {
-        printf("Erro ao inicializar Winsock\n");
-        return 1;
-    }
+    WSAStartup(0x0101, &wsaData);
 
     pthread_mutex_init(&mut1, NULL);
 
@@ -482,87 +478,119 @@ int main(int argc, char *argv[])
 
     if (serverPort <= 0)
     {
-        printf("Porta invalida: %s\n", argv[1]);
+        printf("Porta Invalida: %s\n", argv[1]);
         pthread_mutex_destroy(&mut1);
         WSACleanup();
         return 1;
     }
 
+/*
+ *******************************************************************************
+               Abrindo um socket do tipo stream (TCP)
+ *******************************************************************************
+ */
     sockId = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (sockId < 0)
-    {
+    if (sockId < 0) {
         printf("Stream socket nao pode ser aberto\n");
-        pthread_mutex_destroy(&mut1);
-        WSACleanup();
-        return 1;
+        return(1);
     }
+/*----------------------------------------------------------------------------*/
 
+/*
+ *******************************************************************************
+               Setando os atributos da estrutura do socket
+ *******************************************************************************
+ */
     memset(&server, 0, sizeof(server));
-    server.sin_family = AF_INET;
+    server.sin_family      = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(serverPort);
+    server.sin_port        = htons(serverPort);
+/*----------------------------------------------------------------------------*/
 
+/*
+ *******************************************************************************
+               Fazendo o bind para o stream socket aberto
+ *******************************************************************************
+ */
     bindRet = bind(sockId, (struct sockaddr *)&server, sizeof(server));
-
-    if (bindRet < 0)
-    {
+    if (bindRet < 0) {
         printf("O bind para o stream socket falhou\n");
         close(sockId);
-        pthread_mutex_destroy(&mut1);
-        WSACleanup();
-        return 1;
+        return(1);
     }
+/*----------------------------------------------------------------------------*/
+
+/*
+ *******************************************************************************
+               Obtendo o nome do socket
+ *******************************************************************************
+ */
+    servLen = sizeof(server);
+    getRet  = getsockname(sockId, (struct sockaddr *)&server, &servLen);
+    if (getRet < 0) {
+        printf("Nao foi possivel obter o nome do socket\n");
+        close(sockId);
+        return(1);
+    }
+/*----------------------------------------------------------------------------*/
 
     printf("\n=====================================\n");
     printf("     O JOGO DO PSIQUICO - JUIZ\n");
     printf("=====================================\n");
-    printf("Porta do servidor: %d\n", serverPort);
+    printf("Porta do servidor: %d\n", ntohs(server.sin_port));
     printf("Aguardando 2 jogadores...\n");
     printf("=====================================\n\n");
 
+/*
+ *******************************************************************************
+               Colocando o servidor em modo listening
+ *******************************************************************************
+ */
     listen(sockId, QUEUE_LENGTH);
+/*----------------------------------------------------------------------------*/
 
-    do
-    {
+    do {
+
+/*
+ *******************************************************************************
+               Habilitando o servidor de receber conexoes
+ *******************************************************************************
+ */
         cliLen = sizeof(client);
-
         connId = accept(sockId, (struct sockaddr *)&client, &cliLen);
 
         if (connId < 0)
-        {
             printf("O socket nao pode aceitar conexoes\n");
-            continue;
+/*----------------------------------------------------------------------------*/
+
+        else {  // Criacao de uma thread para atender cada cliente
+            int *novoConnId = (int *)malloc(sizeof(int));
+
+            if (novoConnId == NULL) {
+                printf("Erro ao alocar memoria para a thread\n");
+                close(connId);
+                continue;
+            }
+
+            *novoConnId = connId;
+
+            pthread_t newThread;
+
+            if (pthread_create(&newThread, 0, (void *)servThread, novoConnId) != 0)
+            {
+                printf("Nao foi possivel criar a thread\n");
+                free(novoConnId);
+                close(connId);
+                continue;
+            }
+
+            /* A thread e independente: libera seus recursos ao terminar. */
+            pthread_detach(newThread);
         }
-
-        int *novoConnId = (int *)malloc(sizeof(int));
-
-        if (novoConnId == NULL)
-        {
-            printf("Erro ao alocar memoria para a thread\n");
-            close(connId);
-            continue;
-        }
-
-        *novoConnId = connId;
-
-        pthread_t newThread;
-
-        if (pthread_create(&newThread, NULL, servThread, novoConnId) != 0)
-        {
-            printf("Nao foi possivel criar a thread\n");
-            free(novoConnId);
-            close(connId);
-            continue;
-        }
-
-        pthread_detach(newThread);
-
     } while (true);
 
     close(sockId);
     pthread_mutex_destroy(&mut1);
     WSACleanup();
-
-    return 0;
+    return(0);
 }
