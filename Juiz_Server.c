@@ -233,7 +233,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
             "MSG|A partida ja tem 2 jogadores. Tente mais tarde.\n");
 
         close(connId);
-        pthread_exit(0);  // Encerramento da thread
+        return NULL;  // Encerramento da thread
     }
 
     jogadores[meuSlot].ativo = 1;
@@ -444,7 +444,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
     printf("Thread %d - Jogador %d - conexao encerrada\n", Id, meuNumero);
 
-    pthread_exit(0);  // Encerramento da thread
+    return NULL;  // Encerramento da thread
 } // Final da funcao que cada thread executarah
 
 /*
@@ -456,7 +456,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 int main(int argc, char *argv[])
 {
     int sockId, bindRet, getRet, connId, serverPort;
-    unsigned int servLen, cliLen;
+    int servLen, cliLen;
     struct sockaddr_in server, client;
 
     WSADATA wsaData;
