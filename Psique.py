@@ -1,220 +1,85 @@
-from BetterGuiSpark import GuiSpark
-from PyQt6.QtGui import QFont
-gui = GuiSpark(
-    title="Nova Interface",
-    width=900,
-    height=650
-)
+import tkinter as tk
 
+# Paleta inspirada no Termo (tema escuro)
+BG, TILE, TILE_ACTIVE = "#1c1a1b", "#312a2c", "#615458"
+CERTO, LUGAR, ERRADO = "#3aa394", "#d3ad69", "#4a4144"
+TXT, KEY = "#ffffff", "#816f75"
+LINHAS, COLUNAS = 6, 5
+TECLAS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
 
-teste=""
-#Configurações de Aplicação
-color=["green","orange","red","green","orange"]
-letra = ["L","E","G","A","L"]
-FontColor = "#141414"
-gui.set_theme("custom",
-              bg="#12121F",
-              fg="#F5F5FF", 
-              widget_bg="#24243A",
-              widget_fg="#FFFFFF",
-              accent="#00E5FF"
-              )
+linha, atual = 0, []  # linha ativa e letras digitadas nela
 
-def SendToJudge():
-   #enfia o texto pro juiz.c
-   pass
-texto = gui.add_widget(
-    "label",
-    x=345,
-    y=64,
-    width=280,
-    height=70,
-    text="PSIQUE",
-    bg="transparent",
-    fg="cyan",
-    command=None,
-    items=None
-)
-gui.widgets[texto]["widget"].setFont(QFont("Segoe Script", 50,QFont.Weight.Bold))
+def send_to_judge(palavra):
+    # enfia o texto pro juiz.c
+    status.config(text=f"Enviado: {palavra}")
 
-FundoLetra1 = gui.add_widget(
-    "frame",
-    x=82,
-    y=247,
-    width=100,
-    height=100,
-    text="",
-    bg=color[0],
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-letra1 = gui.add_widget(
-    "label",
-    x=115,
-    y=265,
-    width=50,
-    height=60,
-    text=letra[0],
-    bg=color[0],
-    fg=FontColor,
-    command=None,
-    items=None
-)
+def pintar(row, cores):
+    """Colore uma linha. Use CERTO / LUGAR / ERRADO conforme a resposta do juiz."""
+    for tile, cor in zip(tiles[row], cores):
+        tile.config(bg=cor, highlightbackground=cor)
 
-FundoLetra2 = gui.add_widget(
-    "frame",
-    x=222,
-    y=247,
-    width=100,
-    height=100,
-    text="",
-    bg=color[1],
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-letra2 = gui.add_widget(
-    "label",
-    x=250,
-    y=265,
-    width=50,
-    height=60,
-    text=letra[1],
-    bg=color[1],
-    fg=FontColor,
-    command=None,
-    items=None
-)
+def atualizar():
+    for c, tile in enumerate(tiles[linha]):
+        tile.config(text=atual[c] if c < len(atual) else "",
+                    highlightbackground=TILE_ACTIVE if c == len(atual) else TILE)
 
-FundoLetra3 = gui.add_widget(
-    "frame",
-    x=361,
-    y=247,
-    width=100,
-    height=100,
-    text="",
-    bg=color[2],
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-letra3 = gui.add_widget(    
-    
-    "label",
-    x=385,
-    y=265,
-    width=50,
-    height=60,
-    text=letra[2],
-    bg=color[2],
-    fg=FontColor,
-    command=None,
-    items=None
-)
-FundoLetra4 = gui.add_widget(
-    "frame",
-    x=519,
-    y=247,
-    width=100,
-    height=100,
-    text="",
-    bg=color[3],
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-letra4 = gui.add_widget(
-    "label",
-    x=545,
-    y=265,
-    width=50,
-    height=60,
-    text=letra[3],
-    bg=color[3],
-    fg=FontColor,
-    command=None,
-    items=None
-)
+def tecla(t):
+    global linha, atual
+    if linha >= LINHAS:
+        return
+    if t == "⌫":
+        atual = atual[:-1]
+    elif t == "ENTER":
+        if len(atual) < COLUNAS:
+            return status.config(text="Faltam letras")
+        send_to_judge("".join(atual))
+        pintar(linha, [ERRADO] * COLUNAS)  # placeholder até o juiz responder
+        linha, atual = linha + 1, []
+        if linha < LINHAS:
+            atualizar()
+        return
+    elif len(atual) < COLUNAS:
+        atual.append(t)
+    atualizar()
 
-FundoLetra5 = gui.add_widget(
-    "frame",
-    x=675,
-    y=247,
-    width=100,
-    height=100,
-    text="",
-    bg=color[4],
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-letra5 = gui.add_widget(
-    "label",
-    x=700,
-    y=265,
-    width=50,
-    height=60,
-    text=letra[4],
-    bg=color[4],
-    fg=FontColor,
-    command=None,
-    items=None
-)
-footer = gui.add_widget(
-    "frame",
-    x=0,
-    y=570,
-    width=900,
-    height=100,
-    text="",
-    bg="#ffffff",
-    fg="#ffffff",
-    command=None,
-    items=None
-)
-DebugText = gui.add_widget(
-    "label",
-    x=815,
-    y=580,
-    width=900,
-    height=15,
-    text=teste,
-    bg="#ffffff",
-    fg="#000000",
-    command=None,
-    items=None
- )
-Input= gui.add_widget(
-    "entry",
-    x=250,
-    y=500,
-    width=400,
-    height=50,
-    text="",
-    bg="white",
-    fg="#000000",
-    command=None,
-    items=None
- )
-Sendbt=gui.add_widget(
-    "button",
-    x=650,
-    y=500,
-    width=100,
-    height=50,
-    text="➤",
-    bg="#00E5FF",
-    fg="#000000",
-    command=SendToJudge,
-    items=None
-)
-gui.set_font_size(Sendbt, 20)
-#Setando o tamanho das letras dentro dos quadrados coloridos
-gui.set_font_size(letra1, 50)
-gui.set_font_size(letra2, 50)
-gui.set_font_size(letra3, 50)
-gui.set_font_size(letra4, 50)
-gui.set_font_size(letra5, 50)
-gui.set_font_size(footer, 10)
-gui.run()
+root = tk.Tk()
+root.title("Psique")
+root.geometry("600x780")
+root.configure(bg=BG)
+
+tk.Label(root, text="psique", bg=BG, fg=TXT,
+         font=("Helvetica", 38, "bold")).pack(pady=(25, 15))
+
+# Grade de tentativas
+grade = tk.Frame(root, bg=BG)
+grade.pack()
+tiles = [[tk.Label(grade, bg=TILE, fg=TXT, width=2, font=("Helvetica", 30, "bold"),
+                   highlightthickness=3, highlightbackground=TILE)
+          for _ in range(COLUNAS)] for _ in range(LINHAS)]
+for r, row in enumerate(tiles):
+    for c, t in enumerate(row):
+        t.grid(row=r, column=c, padx=4, pady=4, ipady=8)
+
+status = tk.Label(root, text="", bg=BG, fg=LUGAR, font=("Helvetica", 12))
+status.pack(pady=12)
+
+# Teclado na tela
+teclado = tk.Frame(root, bg=BG)
+teclado.pack(side="bottom", pady=25)
+for i, letras in enumerate(TECLAS):
+    f = tk.Frame(teclado, bg=BG)
+    f.pack(pady=3)
+    chaves = (["ENTER"] if i == 2 else []) + list(letras) + (["⌫"] if i == 2 else [])
+    for k in chaves:
+        tk.Button(f, text=k, bg=KEY, fg=TXT, activebackground=TILE_ACTIVE,
+                  activeforeground=TXT, relief="flat", bd=0,
+                  width=6 if len(k) > 1 else 3, font=("Helvetica", 13, "bold"),
+                  command=lambda k=k: tecla(k)).pack(side="left", padx=2, ipady=8)
+
+# Teclado físico
+root.bind("<Return>", lambda _: tecla("ENTER"))
+root.bind("<BackSpace>", lambda _: tecla("⌫"))
+root.bind("<Key>", lambda e: e.char.isalpha() and e.char.isascii() and tecla(e.char.upper()))
+
+atualizar()
+root.mainloop()
