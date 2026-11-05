@@ -9,7 +9,8 @@ void clear(void) {
     system("clear");
 #endif
 }
-
+int vida=4; //cada jogador gasta 25 de vida ou seja 4 tentativas ate zerar vida e sanidade
+int sanidade=100;
 void pausar(void) {
     printf("\n  Pressione ENTER para continuar...");
     int c;
