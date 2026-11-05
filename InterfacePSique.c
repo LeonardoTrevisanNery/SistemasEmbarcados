@@ -109,7 +109,6 @@ int main(void) {
 
             case 0:
                 clear();
-                printf("\n  Ate a proxima, psiconauta.\n\n");
                 break;
 
             default:
