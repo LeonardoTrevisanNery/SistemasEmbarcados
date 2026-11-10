@@ -52,7 +52,7 @@ void tela_creditos(void) {
     printf(" |                                           |\n");
     printf(" |         *  Leonardo Trevisan Nery         |\n");
     printf(" |         *  Arthur Santos Correia          |\n");
-    printf(" |         *  Luis Furlannis                 |\n");
+    printf(" |         *  Luis Furlanis                  |\n");
     printf(" |                                           |\n");
     printf(" |     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _         |\n");
     printf(" |                                           |\n");
@@ -64,19 +64,20 @@ void tela_creditos(void) {
 void tela_instrucoes(void) {
     clear();
     printf("\n");
-    printf("  ___________________________________________\n");
-    printf(" |                                           |\n");
-    printf(" |         [ ]  I N S T R U C O E S          |\n");
-    printf(" |                                           |\n");
-    printf(" |     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _         |\n");
-    printf(" |                                           |\n");
-    printf(" |   * Dois jogadores alternam turnos        |\n");
-    printf(" |   * Cada um escolhe uma acao por turno    |\n");
-    printf(" |   * Vida e sanidade chegam a 0 = derrota  |\n");
-    printf(" |   * Passe o teclado entre os turnos       |\n");
-    printf(" |                                           |\n");
-    printf(" |     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _         |\n");
-    printf(" |___________________________________________|\n");
+    printf("  ____________________________________________________\n");
+    printf(" |                                                    |\n");
+    printf(" |             [ ]  I N S T R U C O E S               |\n");
+    printf(" |                                                    |\n");
+    printf(" |     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _  |\n");
+    printf(" |                                                    |\n");
+    printf(" |   * Dois jogadores iniciam o jogo.                 |\n");
+    printf(" |   * Cada um escolhe uma acao por turno             |\n");
+    printf(" |   * /secret para escolher uma palavra              |\n");
+    printf(" |   * /guess para tentar acertar uma palavra         |\n");
+    printf(" |   * /END para encerrar o jogo e conexao            |\n");
+    printf(" |   * Digitar diretamente envia texto para jogador   |\n");
+    printf(" |     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _  |\n");
+    printf(" |____________________________________________________|\n");
     pausar();
 }
 
