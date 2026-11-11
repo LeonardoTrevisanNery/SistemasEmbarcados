@@ -1,6 +1,6 @@
 // compilar e rodar:
-//     gcc -Wall Jogo_Psiquico.c -o Jogo_Psiquico.exe -lws2_32
-//     Jogo_Psiquico.exe
+//     gcc -Wall InterfacePSique.c -o InterfacePSique.exe -lws2_32
+//     InterfacePSique.exe
 
 
 #include <winsock2.h>
