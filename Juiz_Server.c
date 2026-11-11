@@ -1,97 +1,35 @@
-/*
- *                  Juiz_Server.c
- *
- * Este programa foi desenvolvido para simular uma aplicacao servidora
- * multithread baseada no "Jogo do Psiquico".
- *
- * Funcao:     Receber e retornar streams compostos de caracteres de
- *             multiplas conexoes de clientes, aplicando as regras do
- *             Jogo do Psiquico (2 jogadores, objeto secreto, palpites
- *             simultaneos e chat).
- * Plataforma: Windows ou CodeBlocks com MinGW
- * Compilar:   gcc -Wall Juiz_Server.c -o Juiz_Server.exe -lpthread -lws2_32
- * Uso:        Juiz_Server.exe [porta_do_servidor]
- *
- * Autor:      Jose Martins Junior (estrutura base)
- *             Adaptado para o Jogo do Psiquico
- *
- * Baseado em:
- *   - ServidorMonoTCP.c  (Jose Martins Junior)
- *   - ServidorMultiTCP.c (Jose Martins Junior)
- *
- * PROTOCOLO (uma mensagem por linha, terminada em '\n')
- *
- *   Cliente -> Juiz:
- *     SECRET|<objeto>   define o objeto secreto do jogador
- *     GUESS|<objeto>    palpite do objeto do oponente
- *     CHAT|<texto>      mensagem de chat
- *     END               encerra a conexao
- *
- *   Juiz -> Cliente:
- *     MSG|<texto>           mensagem/estado do servidor
- *     CHAT|J<n>|<texto>     chat recebido do jogador n
- *     RESULT|MISS           o ultimo palpite errou
- *     WIN|<n>               o jogador n venceu (voce ganhou)
- *     LOSE|<n>              o jogador n venceu (voce perdeu)
- *
- *   Observacao: o acerto NAO e enviado como RESULT|HIT; ele e
- *   comunicado diretamente por WIN|<n> (vencedor) e LOSE|<n>
- *   (perdedor).
- */
+// compilar e rodar:
+//     gcc -Wall Juiz_Server.c -o Juiz_Server.exe -lpthread -lwsock32
+//     Juiz_Server.exe 5000
 
 #include <sys/types.h>
 #include <winsock2.h>
 #include <unistd.h>
-
 #include <pthread.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-#define QUEUE_LENGTH   5      // Tamanho maximo da fila de conexoes de clientes
-#define MAX_FLOW_SIZE  1000   // Tamanho maximo do buffer de caracteres
+#define QUEUE_LENGTH   5      
+#define MAX_FLOW_SIZE  1000   
 #define MAX_PLAYERS    2
 #define MAX_OBJ_LEN    128
 #define true 1
 
-/*
- * =========================
- * ESTADO DO JUIZ
- * =========================
- */
+pthread_mutex_t mut1; 
+int threadId;         
+int jogoFinalizado = 0;
 
-pthread_mutex_t mut1;  // Mutex global que protege o estado dos jogadores
-int threadId;          // Id das threads - variavel global - condicao de disputa
-
-/*
- * Slots dos jogadores (1 e 2 -> indices 0 e 1).
- */
-typedef struct
-{
-    int  ativo;                     /* slot ocupado?               */
-    int  sockId;                    /* socket do jogador           */
-    int  temSegredo;                /* ja definiu o objeto?        */
-    char segredo[MAX_OBJ_LEN + 1];  /* objeto secreto (minusculo)  */
+typedef struct {
+    int  ativo;                     
+    int  sockId;                    
+    int  temSegredo;                
+    char segredo[MAX_OBJ_LEN + 1];  
 } Jogador;
 
 Jogador jogadores[MAX_PLAYERS];
 
-int jogoFinalizado = 0;
-
-/*
- * =========================
- * UTILIDADES
- * =========================
- */
-
-/*
- * Normaliza um objeto/palpite:
- *   - remove espacos no inicio e no fim;
- *   - converte para minusculas.
- * Comparacao fica case-insensitive e tolerante a espacos nas pontas.
- */
 void normalizar(const char *entrada, char *saida, int tamanho)
 {
     int inicio = 0;
@@ -115,12 +53,6 @@ void normalizar(const char *entrada, char *saida, int tamanho)
     saida[n] = '\0';
 }
 
-/*
- * =========================
- * ENVIO DE MENSAGENS
- * =========================
- */
-
 int enviarMensagem(int sockId, const char *mensagem)
 {
     int total = (int)strlen(mensagem);
@@ -139,9 +71,6 @@ int enviarMensagem(int sockId, const char *mensagem)
     return 1;
 }
 
-/*
- * Envia uma mensagem garantindo que ela termine com '\n'.
- */
 int enviarLinha(int sockId, const char *mensagem)
 {
     int tam = (int)strlen(mensagem);
@@ -154,7 +83,6 @@ int enviarLinha(int sockId, const char *mensagem)
     return enviarMensagem(sockId, linha);
 }
 
-/* Envia a todos os jogadores ativos (ja deve estar sem o mutex). */
 void broadcast(const char *mensagem)
 {
     pthread_mutex_lock(&mut1);
@@ -168,7 +96,6 @@ void broadcast(const char *mensagem)
     pthread_mutex_unlock(&mut1);
 }
 
-/* Numero de jogadores conectados (chamar com o mutex travado). */
 int contarAtivos()
 {
     int n = 0;
@@ -178,7 +105,6 @@ int contarAtivos()
     return n;
 }
 
-/* Todos definiram o segredo? (chamar com o mutex travado). */
 int todosComSegredo()
 {
     if (contarAtivos() < MAX_PLAYERS)
@@ -191,29 +117,22 @@ int todosComSegredo()
     return 1;
 }
 
-/*
- * =========================
- * THREAD DO CLIENTE
- * =========================
- */
-
-void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
+void *servThread(void *arg) // função que cada thread vai usar para atender um cliente
 {
     int Id, recvBytes;
     char buf[MAX_FLOW_SIZE];
 
     int connId = *(int *)arg;
 
-    pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
+    pthread_mutex_lock(&mut1);  
     Id = ++threadId;
-    pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+    pthread_mutex_unlock(&mut1);
 
     printf("Thread %d - abrindo conexao\n", Id);
 
     int meuSlot = -1;
-    int meuNumero = 0;      /* 1 ou 2 */
+    int meuNumero = 0;      
 
-    /* Reserva um slot de jogador. */
     pthread_mutex_lock(&mut1);
 
     for (int i = 0; i < MAX_PLAYERS; i++)
@@ -233,7 +152,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
             "MSG|A partida ja tem 2 jogadores. Tente mais tarde.\n");
 
         close(connId);
-        return NULL;  // Encerramento da thread
+        return NULL; 
     }
 
     jogadores[meuSlot].ativo = 1;
@@ -247,7 +166,6 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
     printf("Thread %d - Jogador %d conectou.\n", Id, meuNumero);
 
-    /* Identificacao e instrucoes iniciais. */
     {
         char msg[256];
         snprintf(msg, sizeof(msg),
@@ -258,12 +176,6 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
     }
 
     do {
-
-/*
- *******************************************************************************
-               Recebendo as mensagens do cliente
- *******************************************************************************
- */
         memset(buf, 0, sizeof(buf));
 
         recvBytes = recv(connId, buf, MAX_FLOW_SIZE - 1, 0);
@@ -276,22 +188,13 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
             break;
         }
-/*----------------------------------------------------------------------------*/
-
         else {
-
-/*
- *******************************************************************************
-               Processando as mensagens do cliente
- *******************************************************************************
- */
             buf[recvBytes] = '\0';
             buf[strcspn(buf, "\r\n")] = '\0';
 
             if (strcmp(buf, "END") == 0)
                 break;
 
-            /* ---- SECRET|<objeto> ---- */
             if (strncmp(buf, "SECRET|", 7) == 0)
             {
                 char objeto[MAX_OBJ_LEN + 1];
@@ -328,8 +231,6 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
                 continue;
             }
-
-            /* ---- GUESS|<objeto> ---- */
             if (strncmp(buf, "GUESS|", 6) == 0)
             {
                 char palpite[MAX_OBJ_LEN + 1];
@@ -371,7 +272,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
                     snprintf(msgWin, sizeof(msgWin), "WIN|%d\n", meuNumero);
                     snprintf(msgLose, sizeof(msgLose), "LOSE|%d\n", meuNumero);
 
-                    pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
+                    pthread_mutex_lock(&mut1);   
 
                     for (int i = 0; i < MAX_PLAYERS; i++)
                     {
@@ -384,7 +285,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
                             enviarLinha(jogadores[i].sockId, msgLose);
                     }
 
-                    pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+                    pthread_mutex_unlock(&mut1); 
                 }
                 else
                 {
@@ -393,8 +294,6 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
                 continue;
             }
-
-            /* ---- CHAT|<texto> ---- */
             if (strncmp(buf, "CHAT|", 5) == 0)
             {
                 const char *texto = buf + 5;
@@ -402,7 +301,7 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
                 char msg[MAX_FLOW_SIZE];
                 snprintf(msg, sizeof(msg), "CHAT|J%d|%s\n", meuNumero, texto);
 
-                pthread_mutex_lock(&mut1);   // Inicio de uma regiao critica
+                pthread_mutex_lock(&mut1);  
 
                 for (int i = 0; i < MAX_PLAYERS; i++)
                 {
@@ -410,20 +309,16 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
                         enviarLinha(jogadores[i].sockId, msg);
                 }
 
-                pthread_mutex_unlock(&mut1); // Final de uma regiao critica
+                pthread_mutex_unlock(&mut1); 
 
                 continue;
             }
-
-            /* Comando desconhecido. */
             enviarLinha(connId,
                 "MSG|Comando invalido. Use SECRET|, GUESS| ou CHAT|.\n");
-/*----------------------------------------------------------------------------*/
         }
     } while (recvBytes > 0);
 
-    /* Limpeza do slot. */
-    pthread_mutex_lock(&mut1);
+    pthread_mutex_lock(&mut1); // limpeza do slot.
 
     jogadores[meuSlot].ativo = 0;
     jogadores[meuSlot].sockId = 0;
@@ -432,7 +327,6 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
     pthread_mutex_unlock(&mut1);
 
-    /* Avisa o outro jogador que o oponente saiu. */
     {
         char msg[64];
         snprintf(msg, sizeof(msg),
@@ -444,14 +338,10 @@ void *servThread(void *arg)   // Inicio da funcao que cada thread executarah
 
     printf("Thread %d - Jogador %d - conexao encerrada\n", Id, meuNumero);
 
-    return NULL;  // Encerramento da thread
-} // Final da funcao que cada thread executarah
+    return NULL;  
+} 
 
-/*
- * =========================
- * MAIN
- * =========================
- */
+
 
 int main(int argc, char *argv[])
 {
@@ -484,47 +374,24 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-/*
- *******************************************************************************
-               Abrindo um socket do tipo stream (TCP)
- *******************************************************************************
- */
     sockId = socket(AF_INET, SOCK_STREAM, 0);
     if (sockId < 0) {
         printf("Stream socket nao pode ser aberto\n");
         return(1);
     }
-/*----------------------------------------------------------------------------*/
 
-/*
- *******************************************************************************
-               Setando os atributos da estrutura do socket
- *******************************************************************************
- */
     memset(&server, 0, sizeof(server));
     server.sin_family      = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
     server.sin_port        = htons(serverPort);
-/*----------------------------------------------------------------------------*/
 
-/*
- *******************************************************************************
-               Fazendo o bind para o stream socket aberto
- *******************************************************************************
- */
     bindRet = bind(sockId, (struct sockaddr *)&server, sizeof(server));
     if (bindRet < 0) {
         printf("O bind para o stream socket falhou\n");
         close(sockId);
         return(1);
     }
-/*----------------------------------------------------------------------------*/
 
-/*
- *******************************************************************************
-               Obtendo o nome do socket
- *******************************************************************************
- */
     servLen = sizeof(server);
     getRet  = getsockname(sockId, (struct sockaddr *)&server, &servLen);
     if (getRet < 0) {
@@ -532,7 +399,6 @@ int main(int argc, char *argv[])
         close(sockId);
         return(1);
     }
-/*----------------------------------------------------------------------------*/
 
     printf("\n=====================================\n");
     printf("     O JOGO DO PSIQUICO - JUIZ\n");
@@ -541,29 +407,14 @@ int main(int argc, char *argv[])
     printf("Aguardando 2 jogadores...\n");
     printf("=====================================\n\n");
 
-/*
- *******************************************************************************
-               Colocando o servidor em modo listening
- *******************************************************************************
- */
     listen(sockId, QUEUE_LENGTH);
-/*----------------------------------------------------------------------------*/
-
     do {
-
-/*
- *******************************************************************************
-               Habilitando o servidor de receber conexoes
- *******************************************************************************
- */
         cliLen = sizeof(client);
         connId = accept(sockId, (struct sockaddr *)&client, &cliLen);
 
         if (connId < 0)
             printf("O socket nao pode aceitar conexoes\n");
-/*----------------------------------------------------------------------------*/
-
-        else {  // Criacao de uma thread para atender cada cliente
+        else { 
             int *novoConnId = (int *)malloc(sizeof(int));
 
             if (novoConnId == NULL) {
@@ -584,7 +435,6 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            /* A thread e independente: libera seus recursos ao terminar. */
             pthread_detach(newThread);
         }
     } while (true);

@@ -1,39 +1,11 @@
-/*
- *                  Jogo_Psiquico.c
- *
- * "O Jogo do Psiquico" - INTERFACE / LAUNCHER.
- *
- * Funcao:
- *   Menu unico que integra os dois programas do jogo, sem alterar nenhum
- *   dos dois arquivos originais:
- *     - Juiz_Server.c      (servidor / juiz)
- *     - Jogador_Cliente.c  (cliente / jogador)
- *
- *   Ao ser executado, apresenta um menu e abre o Juiz e/ou os Jogadores
- *   em janelas de console proprias, ja com IP e porta preenchidos.
- *
- * Observacao:
- *   Este programa NAO troca dados com ninguem: ele apenas inicia os outros
- *   dois executaveis. Toda a comunicacao do jogo continua sendo feita
- *   exclusivamente por sockets TCP entre Jogador_Cliente e Juiz_Server.
- *
- * Plataforma: Windows com MinGW.
- *
- * Compilar:
- *   gcc -Wall Jogo_Psiquico.c -o Jogo_Psiquico.exe -lws2_32
- *
- * Uso:
- *   Jogo_Psiquico.exe
- *
- * Coloque Jogo_Psiquico.exe na mesma pasta de Juiz_Server.exe e
- * Jogador_Cliente.exe (ou dos .c correspondentes: a opcao 5 do menu
- * compila tudo).
- */
+// compilar e rodar:
+//     gcc -Wall Jogo_Psiquico.c -o Jogo_Psiquico.exe -lws2_32
+//     Jogo_Psiquico.exe
+
 
 #include <winsock2.h>
 #include <windows.h>
 #include <conio.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,10 +18,9 @@
 
 #define PORTA_PADRAO    5000
 #define IP_LOCAL        "127.0.0.1"
-#define ESPERA_JUIZ_MS  1000   /* tempo para o juiz abrir a porta */
-#define ESPERA_JOG_MS   500    /* intervalo entre a entrada dos jogadores */
+#define ESPERA_JUIZ_MS  1000   
+#define ESPERA_JOG_MS   500    
 
-/* Cores do console. */
 #define COR_NORMAL      7
 #define COR_TITULO      11
 #define COR_OPCAO       14
@@ -57,13 +28,7 @@
 #define COR_ERRO        12
 #define COR_DICA        8
 
-static char g_dir[MAX_PATH];   /* pasta onde esta este executavel */
-
-/*
- * ============================================================================
- * UTILIDADES DE CONSOLE
- * ============================================================================
- */
+static char g_dir[MAX_PATH];  
 
 static void cor(WORD c)
 {
@@ -75,7 +40,6 @@ static void limparTela(void)
     system("cls");
 }
 
-/* Le uma linha do teclado, sem '\n'. Retorna 0 em EOF. */
 static int lerLinha(const char *prompt, char *buf, int tamanho)
 {
     cor(COR_OPCAO);
@@ -88,7 +52,6 @@ static int lerLinha(const char *prompt, char *buf, int tamanho)
 
     buf[strcspn(buf, "\r\n")] = '\0';
 
-    /* Remove espacos nas pontas. */
     {
         char *ini = buf;
         int fim;
@@ -126,12 +89,6 @@ static void mostrarBanner(void)
     cor(COR_NORMAL);
 }
 
-/*
- * ============================================================================
- * ARQUIVOS, PORTA E REDE
- * ============================================================================
- */
-
 static int arquivoExiste(const char *nome)
 {
     char caminho[MAX_PATH * 2];
@@ -139,7 +96,6 @@ static int arquivoExiste(const char *nome)
     return GetFileAttributesA(caminho) != INVALID_FILE_ATTRIBUTES;
 }
 
-/* Aceita apenas letras, digitos, '.', '-' e '_' (o host vai para a linha de comando). */
 static int hostValido(const char *host)
 {
     if (host[0] == '\0' || strlen(host) > 100)
@@ -154,7 +110,6 @@ static int hostValido(const char *host)
     return 1;
 }
 
-/* Le uma porta; ENTER usa o padrao. Retorna 0 se invalida. */
 static int lerPorta(void)
 {
     char buf[32];
@@ -182,7 +137,6 @@ static int lerPorta(void)
     return porta;
 }
 
-/* Testa se a porta pode ser aberta (nao esta em uso). */
 static int portaLivre(int porta)
 {
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
@@ -203,7 +157,6 @@ static int portaLivre(int porta)
     return ok;
 }
 
-/* Lista os enderecos IPv4 desta maquina (para o amigo se conectar). */
 static void listarIPs(void)
 {
     char nome[256];
@@ -223,12 +176,6 @@ static void listarIPs(void)
         printf("  -> %s\n", inet_ntoa(a));
     }
 }
-
-/*
- * ============================================================================
- * COMPILACAO
- * ============================================================================
- */
 
 static int compilarArquivo(const char *fonte, const char *exe, const char *libs)
 {
@@ -270,10 +217,6 @@ static int compilarTudo(void)
     return a && b;
 }
 
-/*
- * Garante que os executaveis necessarios existem; se faltarem, oferece
- * compilar a partir dos fontes. Retorna 1 se tudo estiver pronto.
- */
 static int garantirExecutaveis(int precisaJuiz, int precisaCliente)
 {
     int faltaJuiz    = precisaJuiz    && !arquivoExiste(EXE_JUIZ);
@@ -301,16 +244,6 @@ static int garantirExecutaveis(int precisaJuiz, int precisaCliente)
     return 1;
 }
 
-/*
- * ============================================================================
- * LANCAMENTO DOS PROCESSOS
- *
- * Cada programa abre em uma janela de console propria. Todos entram em um
- * "job" do Windows: ao encerrar a partida (ou fechar o launcher) o job e
- * finalizado e o Juiz, que roda em loop infinito, nao fica orfao.
- * ============================================================================
- */
-
 static HANDLE criarJob(void)
 {
     HANDLE job = CreateJobObjectA(NULL, NULL);
@@ -332,11 +265,6 @@ static HANDLE criarJob(void)
     return job;
 }
 
-/*
- * Abre "exe args" em uma nova janela com o titulo dado. A janela fica aberta
- * (pause) apos o programa terminar, para dar tempo de ler mensagens de erro.
- * Retorna o handle do processo ou NULL.
- */
 static HANDLE lancar(HANDLE job, const char *titulo, const char *exe,
                      const char *args)
 {
@@ -371,10 +299,6 @@ static HANDLE lancar(HANDLE job, const char *titulo, const char *exe,
     return pi.hProcess;
 }
 
-/*
- * Mantem a partida ate o usuario apertar uma tecla ou, se n > 0, ate todas
- * as janelas de jogador serem fechadas. Depois encerra tudo.
- */
 static void esperarPartida(HANDLE job, HANDLE *jogadores, int n)
 {
     cor(COR_DICA);
@@ -415,13 +339,6 @@ static void esperarPartida(HANDLE job, HANDLE *jogadores, int n)
     cor(COR_NORMAL);
 }
 
-/*
- * ============================================================================
- * OPCOES DO MENU
- * ============================================================================
- */
-
-/* 1 - Partida local: Juiz + 2 Jogadores nesta maquina. */
 static void partidaLocal(void)
 {
     int porta;
@@ -467,7 +384,6 @@ static void partidaLocal(void)
     esperarPartida(job, jog, 2);
 }
 
-/* 2 - Hospedar: Juiz + 1 Jogador aqui; o outro jogador entra pela rede. */
 static void hospedarPartida(void)
 {
     int porta;
@@ -517,13 +433,10 @@ static void hospedarPartida(void)
         return;
     }
 
-    /* O juiz continua ate o anfitriao encerrar, pois o outro jogador pode
-       ainda estar conectado mesmo que a janela local seja fechada. */
     CloseHandle(jog);
     esperarPartida(job, NULL, 0);
 }
 
-/* 3 - Entrar em uma partida hospedada por outra maquina. */
 static void entrarPartida(void)
 {
     char host[128];
@@ -561,7 +474,6 @@ static void entrarPartida(void)
     }
 }
 
-/* 4 - Somente o Juiz (para jogadores em outras maquinas). */
 static void somenteJuiz(void)
 {
     int porta;
@@ -598,14 +510,12 @@ static void somenteJuiz(void)
     esperarPartida(job, NULL, 0);
 }
 
-/* 5 - Compilar os fontes. */
 static void opcaoCompilar(void)
 {
     printf("\nCompilando...\n\n");
     compilarTudo();
 }
 
-/* 6 - Regras e comandos. */
 static void mostrarRegras(void)
 {
     cor(COR_TITULO);
@@ -622,12 +532,6 @@ static void mostrarRegras(void)
     printf("  6. /END sai do jogo.\n");
     printf("\n  Maiusculas/minusculas e espacos nas pontas sao ignorados.\n");
 }
-
-/*
- * ============================================================================
- * MENU PRINCIPAL
- * ============================================================================
- */
 
 static void mostrarMenu(void)
 {
@@ -663,7 +567,6 @@ int main(void)
     WSADATA wsaData;
     char opcao[16];
 
-    /* Descobre a pasta deste executavel (onde ficam Juiz e Jogador). */
     {
         char *barra;
 

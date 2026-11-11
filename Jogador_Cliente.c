@@ -1,59 +1,23 @@
-/*
- *                  Jogador_Cliente.c
- *
- * "O Jogo do Psiquico" - CLIENTE (JOGADOR) TCP.
- *
- * Baseado na estrutura dos exemplos:
- *   - ClienteMonoTCP.c (Jose Martins Junior)
- *   - ClienteMultiTCP.c (Jose Martins Junior)
- *
- * Funcao:
- *   Enviar e receber mensagens por sockets TCP, permitindo que dois jogadores
- *   conversem e tentem adivinhar o objeto secreto um do outro.
- *
- * Plataforma: Windows com MinGW, usando Winsock e pthreads.
- *
- * O cliente:
- *   - conecta ao juiz (servidor);
- *   - cria uma thread para receber e exibir mensagens do juiz;
- *   - o programa principal le comandos do usuario e os envia ao juiz.
- *
- * COMANDOS DO USUARIO:
- *   /secret <objeto>   define seu objeto secreto
- *   /guess  <objeto>   tenta adivinhar o objeto do oponente
- *   /END               encerra o jogo
- *   <qualquer texto>   envia mensagem de chat para o oponente
- *
- * Traducao para o protocolo do juiz:
- *   /secret x  -> SECRET|x
- *   /guess  x  -> GUESS|x
- *   texto      -> CHAT|texto
- *
- * Compilar (MinGW com suporte a pthreads):
- *   gcc -Wall Jogador_Cliente.c -o Jogador_Cliente.exe -lpthread -lwsock32
- *
- * Uso:
- *   Jogador_Cliente.exe 127.0.0.1 5000
- */
+// comandos:
+//     /secret para escolher o objeto
+//     /guess para advinhar
+//     /END para finalizar 
+//     <qualquer texto> para enviar mensagem de chat
+
+// compilar e rodar:
+//     gcc -Wall Jogador_Cliente.c -o Jogador_Cliente.exe -lpthread -lwsock32
+//     Jogador_Cliente.exe 172.0.0.1 5000
 
 #include <sys/types.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <pthread.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define MAX_FLOW_SIZE 1024
 
-/*
- * ============================================================================
- * Processa uma mensagem recebida do juiz e a exibe de forma amigavel.
- *
- * O protocolo utiliza mensagens no formato TIPO|dados.
- * ============================================================================
- */
 void exibirMensagem(char *linha)
 {
     if (strncmp(linha, "MSG|", 4) == 0)
@@ -62,7 +26,6 @@ void exibirMensagem(char *linha)
     }
     else if (strncmp(linha, "CHAT|", 5) == 0)
     {
-        /* Formato: CHAT|J<n>|<texto> */
         char *origem = linha + 5;
         char *sep = strchr(origem, '|');
 
@@ -78,7 +41,6 @@ void exibirMensagem(char *linha)
     }
     else if (strncmp(linha, "RESULT|", 7) == 0)
     {
-        /* O juiz envia RESULT|MISS quando o palpite esta errado. */
         printf("\n[RESULTADO] Palpite errado. Tente de novo.\n");
     }
     else if (strncmp(linha, "WIN|", 4) == 0)
@@ -99,15 +61,6 @@ void exibirMensagem(char *linha)
     fflush(stdout);
 }
 
-/*
- * ============================================================================
- * Thread de recepcao das mensagens do servidor.
- *
- * O TCP e um fluxo continuo: uma chamada recv() pode receber varias mensagens
- * juntas ou somente parte de uma mensagem. Por isso, as mensagens sao
- * separadas por '\n' e processadas apenas quando a linha esta completa.
- * ============================================================================
- */
 void *clientThread(void *arg)
 {
     int sockId = *(int *)arg;
@@ -121,11 +74,6 @@ void *clientThread(void *arg)
 
     do
     {
-        /*
-         * ================================================================
-         * Recebendo as mensagens do servidor.
-         * ================================================================
-         */
         memset(buf, 0, sizeof(buf));
         recvBytes = recv((SOCKET)sockId, buf, MAX_FLOW_SIZE - 1, 0);
 
@@ -141,10 +89,6 @@ void *clientThread(void *arg)
 
         buf[recvBytes] = '\0';
 
-        /*
-         * Acumula os bytes recebidos. O limite evita ultrapassar
-         * o tamanho reservado para o buffer.
-         */
         {
             int espaco = (int)sizeof(acumulado) - tamAcumulado - 1;
 
@@ -156,9 +100,6 @@ void *clientThread(void *arg)
             acumulado[tamAcumulado] = '\0';
         }
 
-        /*
-         * Processa todas as mensagens completas, terminadas em '\n'.
-         */
         {
             char *inicio = acumulado;
             char *quebra;
@@ -167,7 +108,7 @@ void *clientThread(void *arg)
             {
                 *quebra = '\0';
 
-                /* Remove o '\r' que pode existir em mensagens Windows. */
+                // remove o '\r' que pode existir em mensagens Windows.
                 inicio[strcspn(inicio, "\r")] = '\0';
 
                 if (strlen(inicio) > 0)
@@ -176,9 +117,6 @@ void *clientThread(void *arg)
                 inicio = quebra + 1;
             }
 
-            /*
-             * Preserva no inicio do buffer a mensagem ainda incompleta.
-             */
             tamAcumulado = (int)strlen(inicio);
             memmove(acumulado, inicio, tamAcumulado + 1);
         }
@@ -191,15 +129,6 @@ void *clientThread(void *arg)
     return NULL;
 }
 
-/*
- * ============================================================================
- * Converte o comando digitado pelo jogador para o protocolo do juiz.
- *
- * /secret objeto -> SECRET|objeto
- * /guess objeto  -> GUESS|objeto
- * qualquer texto -> CHAT|texto
- * ============================================================================
- */
 void montarComando(const char *entrada, char *saida, int tamanho)
 {
     if (strncmp(entrada, "/secret ", 8) == 0)
@@ -225,23 +154,12 @@ int main(int argc, char *argv[])
 
     WSADATA wsaData;
 
-    /*
-     * =========================================================================
-     * Inicializacao do Winsock (biblioteca de sockets do Windows).
-     * =========================================================================
-     */
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
         printf("Nao foi possivel inicializar o Winsock.\n");
         return 1;
     }
 
-    /*
-     * =========================================================================
-     * Testando os argumentos passados na chamada.
-     * O programa espera o endereco do servidor e a porta TCP.
-     * =========================================================================
-     */
     if (argc != 3)
     {
         printf("Uso: %s IP_ou_nome_do_servidor porta_do_servidor\n", argv[0]);
@@ -249,11 +167,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /*
-     * =========================================================================
-     * Setando e testando o endereco informado (primeiro argumento).
-     * =========================================================================
-     */
     hp = gethostbyname(argv[1]);
 
     if (hp == NULL)
@@ -263,11 +176,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /*
-     * =========================================================================
-     * Setando os atributos da estrutura do socket.
-     * =========================================================================
-     */
     memset(&client, 0, sizeof(client));
     memcpy((char *)&client.sin_addr, (char *)hp->h_addr, hp->h_length);
     client.sin_family = AF_INET;
@@ -283,11 +191,6 @@ int main(int argc, char *argv[])
 
     client.sin_port = htons((unsigned short)serverPort);
 
-    /*
-     * =========================================================================
-     * Abrindo um socket do tipo stream (TCP).
-     * =========================================================================
-     */
     sockId = (int)socket(AF_INET, SOCK_STREAM, 0);
 
     if (sockId == (int)INVALID_SOCKET)
@@ -297,11 +200,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /*
-     * =========================================================================
-     * Conectando o socket ao servidor (juiz).
-     * =========================================================================
-     */
     connId = connect(
         (SOCKET)sockId,
         (struct sockaddr *)&client,
@@ -329,11 +227,6 @@ int main(int argc, char *argv[])
     printf("  <texto>           -> envia mensagem de chat\n");
     printf("==============================================\n\n");
 
-    /*
-     * =========================================================================
-     * Criando a thread que recebe mensagens do servidor em paralelo.
-     * =========================================================================
-     */
     pthread_t newThread;
 
     if (pthread_create(&newThread, NULL, clientThread, &sockId) != 0)
@@ -346,11 +239,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /*
-     * =========================================================================
-     * Leitura dos comandos do usuario e envio das mensagens ao servidor.
-     * =========================================================================
-     */
     while (1)
     {
         printf("> ");
@@ -364,9 +252,6 @@ int main(int argc, char *argv[])
         if (strlen(buf) == 0)
             continue;
 
-        /*
-         * Condicao de parada: envia END ao servidor para encerrar a sessao.
-         */
         if (strcmp(buf, "/END") == 0 || strcmp(buf, "END") == 0)
         {
             send((SOCKET)sockId, "END\n", 4, 0);
@@ -378,15 +263,8 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        /*
-         * Monta a mensagem de acordo com o protocolo definido pelo jogo.
-         */
         montarComando(buf, comando, sizeof(comando));
 
-        /*
-         * Enviando as mensagens para o servidor.
-         * As mensagens sao terminadas em '\n' para delimitar cada linha.
-         */
         {
             size_t tamanhoEnvio = strlen(comando);
 
